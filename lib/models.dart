@@ -73,6 +73,8 @@ class SaleOrderLine {
 class SyncLog {
   final String id;
   final String? performedBy;
+  final String? internalRef;
+  final String? barcode;
   final double targetQty;
   final double? erpBefore, erpAfter;
   final double? shaghBefore, shaghAfter, shaghDelta;
@@ -83,6 +85,8 @@ class SyncLog {
   SyncLog({
     required this.id,
     this.performedBy,
+    this.internalRef,
+    this.barcode,
     required this.targetQty,
     this.erpBefore,
     this.erpAfter,
@@ -99,6 +103,8 @@ class SyncLog {
         id: j['id'].toString(),
         performedBy:
             (j['create_user'] as Map<String, dynamic>?)?['username'] as String?,
+        internalRef: j['internal_ref'] as String?,
+        barcode: j['barcode'] as String?,
         targetQty: _d(j['target_quantity']) ?? 0,
         erpBefore: _d(j['erp_qty_before']),
         erpAfter: _d(j['erp_qty_after']),

@@ -158,6 +158,26 @@ class _LogCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Internal ref + barcode
+          if (log.internalRef != null || log.barcode != null) ...[
+            Row(
+              children: [
+                if (log.internalRef != null)
+                  Text(log.internalRef!,
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: C.text)),
+                if (log.internalRef != null && log.barcode != null)
+                  const SizedBox(width: 10),
+                if (log.barcode != null)
+                  Text(log.barcode!,
+                      style: const TextStyle(fontSize: 12, color: C.muted)),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+
           // Top row: date + user + status badge
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
