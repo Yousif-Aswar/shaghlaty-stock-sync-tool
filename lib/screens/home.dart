@@ -52,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Stock Sync'),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 8),
             child: Center(
               child: Text(
                 widget.username,
@@ -60,6 +60,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     const TextStyle(fontSize: 13, color: C.success),
               ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, size: 20),
+            tooltip: 'Logout',
+            onPressed: _expireSession,
           ),
         ],
       ),
