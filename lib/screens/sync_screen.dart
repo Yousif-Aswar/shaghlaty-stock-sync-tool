@@ -162,6 +162,7 @@ class _SyncScreenState extends State<SyncScreen> {
   Future<void> _sync() async {
     if (_product == null) return;
     _activity();
+    _searchFocus.requestFocus();
     final s = _qtyCtrl.text.trim();
     if (s.isEmpty) { _setSync('Please enter a quantity to sync.', 'warning'); return; }
     final qty = double.tryParse(s);
