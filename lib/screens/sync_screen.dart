@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../models.dart';
@@ -16,6 +17,7 @@ class _SyncScreenState extends State<SyncScreen> {
   final _searchCtrl = TextEditingController();
   final _searchFocus = FocusNode();
   final _qtyCtrl = TextEditingController();
+  Timer? _selectAllTimer;
 
   ProductVariant? _product;
   bool _searching = false;
@@ -37,6 +39,13 @@ class _SyncScreenState extends State<SyncScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocus.addListener(() {
+      if (_searchFocus.hasFocus) {
+        _resetSelectAllTimer();
+      } else {
+        _selectAllTimer?.cancel();
+      }
+    });
     // Always keep focus on the search field so the physical scanner
     // (which emits keystrokes + Enter via the Type-C port) hits it directly.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -44,8 +53,19 @@ class _SyncScreenState extends State<SyncScreen> {
     });
   }
 
+  void _resetSelectAllTimer() {
+    _selectAllTimer?.cancel();
+    _selectAllTimer = Timer(const Duration(seconds: 5), () {
+      if (_searchFocus.hasFocus) {
+        _searchCtrl.selection = TextSelection(
+            baseOffset: 0, extentOffset: _searchCtrl.text.length);
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _selectAllTimer?.cancel();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     _qtyCtrl.dispose();
@@ -163,6 +183,7 @@ class _SyncScreenState extends State<SyncScreen> {
     if (_product == null) return;
     _activity();
     _searchFocus.requestFocus();
+    _searchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _searchCtrl.text.length);
     final s = _qtyCtrl.text.trim();
     if (s.isEmpty) { _setSync('Please enter a quantity to sync.', 'warning'); return; }
     final qty = double.tryParse(s);
@@ -229,7 +250,7 @@ class _SyncScreenState extends State<SyncScreen> {
                             )
                           : null,
                     ),
-                    onChanged: (_) => _activity(),
+                    onChanged: (_) { _activity(); _resetSelectAllTimer(); },
                     onSubmitted: (_) => _search(),
                     textInputAction: TextInputAction.search,
                   ),
