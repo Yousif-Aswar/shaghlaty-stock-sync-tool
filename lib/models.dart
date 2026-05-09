@@ -55,6 +55,30 @@ class ShaghlatyQty {
       );
 }
 
+// ─── Stock Move Line ─────────────────────────────────────────────────────────
+
+class StockMoveLine {
+  final String id;
+  final String? operationName;
+  final String state;
+  final String? saleOrderId;
+
+  StockMoveLine({
+    required this.id,
+    this.operationName,
+    required this.state,
+    this.saleOrderId,
+  });
+
+  factory StockMoveLine.fromJson(Map<String, dynamic> j) => StockMoveLine(
+        id: j['id'].toString(),
+        operationName: j['display_name'] as String?,
+        state: j['state'] as String? ?? 'draft',
+        saleOrderId:
+            (j['ref_sale_order'] as Map<String, dynamic>?)?['id'] as String?,
+      );
+}
+
 // ─── Sale Order Line ──────────────────────────────────────────────────────────
 
 class SaleOrderLine {

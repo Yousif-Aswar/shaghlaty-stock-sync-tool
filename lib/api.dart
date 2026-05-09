@@ -86,6 +86,64 @@ class Api {
         (body['data'] ?? body) as Map<String, dynamic>);
   }
 
+  // ─── Stock operations (draft + ready) ────────────────────────────────────
+
+  Future<List<StockMoveLine>> getStockOperations(String productId) async {
+    final res = await http.post(
+      Uri.parse(
+          '$_base/inventory/stock-operation/filter-query/?page=1&page_size=100&ordering=-created'),
+      headers: _headers,
+      body: jsonEncode({
+        'domain': {
+          'and': [
+            ['move__product', 'exact', productId],
+            {
+              'or': [
+                ['state', 'exact', 'draft'],
+                ['state', 'exact', 'ready'],
+              ]
+            },
+            {'and': []},
+          ]
+        },
+        'return_archive': false,
+        'group_by': '',
+      }),
+    );
+    _check401(res);
+    _checkOk(res, 'Failed to load stock operations');
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final rows =
+        body['data']?['results'] ?? body['data'] ?? body['results'] ?? body;
+    if (rows is! List) return [];
+    return rows
+        .map((e) => StockMoveLine.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<double?> getSaleOrderLineQty(
+      String saleOrderId, String productId) async {
+    final res = await http.get(
+      Uri.parse('$_base/sales/sale-order/$saleOrderId/'),
+      headers: _headers,
+    );
+    _check401(res);
+    _checkOk(res, 'Failed to load sale order');
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final data = (body['data'] ?? body) as Map<String, dynamic>;
+    final lines = data['lines'] as List? ?? [];
+    for (final line in lines) {
+      final lineMap = line as Map<String, dynamic>;
+      if (lineMap['state'] != 'sale_order') continue;
+      final product = lineMap['product'] as Map<String, dynamic>?;
+      if (product?['id']?.toString() == productId) {
+        final v = lineMap['product_uom_qty'];
+        return v == null ? null : double.tryParse(v.toString());
+      }
+    }
+    return null;
+  }
+
   // ─── Draft sale orders ─────────────────────────────────────────────────────
 
   Future<List<SaleOrderLine>> getDraftOrders(String productId) async {
