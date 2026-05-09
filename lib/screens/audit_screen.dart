@@ -107,14 +107,29 @@ class _AuditScreenState extends State<AuditScreen> {
                           child: Text('No audit entries.',
                               style:
                                   TextStyle(color: C.muted, fontSize: 14)))
-                      : ListView.separated(
-                          padding:
-                              const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                          itemCount: _data!.results.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (_, i) =>
-                              _LogCard(log: _data!.results[i]),
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isWide = constraints.maxWidth >= 720;
+                            if (isWide) {
+                              return GridView.builder(
+                                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 1.4,
+                                ),
+                                itemCount: _data!.results.length,
+                                itemBuilder: (_, i) => _LogCard(log: _data!.results[i]),
+                              );
+                            }
+                            return ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                              itemCount: _data!.results.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              itemBuilder: (_, i) => _LogCard(log: _data!.results[i]),
+                            );
+                          },
                         ),
         ),
 

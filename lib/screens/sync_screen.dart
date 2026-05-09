@@ -28,6 +28,10 @@ class _SyncScreenState extends State<SyncScreen> {
   ShaghlatyQty? _shagh;
   bool _loadingShagh = false;
 
+  List<StockMoveLine>? _stockOps;
+  bool _loadingStockOps = false;
+  Map<String, double?> _stockOpQtys = {};
+  Set<String> _resolvingQtys = {};
   List<SaleOrderLine>? _orders;
   bool _loadingOrders = false;
 
@@ -80,6 +84,9 @@ class _SyncScreenState extends State<SyncScreen> {
       _product = null;
       _erp = null;
       _shagh = null;
+      _stockOps = null;
+      _stockOpQtys = {};
+      _resolvingQtys = {};
       _orders = null;
       _globalMsg = null;
       _syncMsg = null;
@@ -103,6 +110,9 @@ class _SyncScreenState extends State<SyncScreen> {
       _product = null;
       _erp = null;
       _shagh = null;
+      _stockOps = null;
+      _stockOpQtys = {};
+      _resolvingQtys = {};
       _orders = null;
       _globalMsg = null;
       _syncMsg = null;
@@ -117,6 +127,7 @@ class _SyncScreenState extends State<SyncScreen> {
       setState(() => _product = p);
       _loadErp(p);
       _loadShagh(p);
+      _loadStockOps(p);
       _loadOrders(p);
     } on SessionExpiredException {
       _sessionExpired();
@@ -159,6 +170,52 @@ class _SyncScreenState extends State<SyncScreen> {
         _setSync('Shaghlaty: ${e.toString().replaceFirst("Exception: ", "")}', 'warning');
       }
     }
+  }
+
+  Future<void> _loadStockOps(ProductVariant p) async {
+    setState(() => _loadingStockOps = true);
+    try {
+      final ops = await Api.instance.getStockOperations(p.id);
+      if (!mounted) return;
+      setState(() { _stockOps = ops; _loadingStockOps = false; });
+      _resolveStockOpQtys(ops, p.id);
+    } on Exception {
+      if (mounted) setState(() { _stockOps = []; _loadingStockOps = false; });
+    }
+  }
+
+  Future<void> _resolveStockOpQtys(
+      List<StockMoveLine> ops, String productId) async {
+    // ops with no sale order reference can never qualify
+    if (mounted) {
+      setState(() {
+        _stockOps = ops.where((o) => o.saleOrderId != null).toList();
+      });
+    }
+    final toResolve = ops.where((o) => o.saleOrderId != null).toList();
+    if (toResolve.isEmpty) return;
+    setState(() => _resolvingQtys.addAll(toResolve.map((o) => o.id)));
+    await Future.wait(toResolve.map((op) async {
+      try {
+        final qty = await Api.instance
+            .getSaleOrderLineQty(op.saleOrderId!, productId);
+        if (!mounted || _product?.id != productId) return;
+        if (qty == null) {
+          // sale order not in 'sale_order' state — remove op from list
+          setState(() {
+            _stockOps = _stockOps?.where((o) => o.id != op.id).toList();
+            _resolvingQtys.remove(op.id);
+          });
+        } else {
+          setState(() {
+            _stockOpQtys[op.id] = qty;
+            _resolvingQtys.remove(op.id);
+          });
+        }
+      } catch (_) {
+        if (mounted) setState(() => _resolvingQtys.remove(op.id));
+      }
+    }));
   }
 
   Future<void> _loadOrders(ProductVariant p) async {
@@ -221,82 +278,151 @@ class _SyncScreenState extends State<SyncScreen> {
     );
   }
 
+  Widget _buildSearchField() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _searchCtrl,
+            focusNode: _searchFocus,
+            autofocus: true,
+            style: const TextStyle(color: C.text, fontSize: 15),
+            decoration: InputDecoration(
+              hintText: 'Scan barcode or enter internal ref…',
+              prefixIcon: const Icon(Icons.barcode_reader, color: C.muted, size: 20),
+              suffixIcon: _searchCtrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, color: C.muted, size: 18),
+                      onPressed: _clearSearch,
+                      tooltip: 'Clear',
+                    )
+                  : null,
+            ),
+            onChanged: (_) { _activity(); _resetSelectAllTimer(); },
+            onSubmitted: (_) => _search(),
+            textInputAction: TextInputAction.search,
+          ),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton(
+          onPressed: _searching ? null : _search,
+          child: _searching ? const _Spinner() : const Text('Search'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProductCard() {
+    return _ProductCard(
+      product: _product!,
+      erp: _erp,
+      loadingErp: _loadingErp,
+      shagh: _shagh,
+      loadingShagh: _loadingShagh,
+      qtyCtrl: _qtyCtrl,
+      syncing: _syncing,
+      syncMsg: _syncMsg,
+      syncType: _syncType,
+      onSync: _sync,
+      onRefresh: _refresh,
+      onActivity: _activity,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: _activity,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Search / scan field
-            Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 720;
+          if (isWide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _searchCtrl,
-                    focusNode: _searchFocus,
-                    autofocus: true,
-                    style: const TextStyle(color: C.text, fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: 'Scan barcode or enter internal ref…',
-                      prefixIcon: const Icon(Icons.barcode_reader, color: C.muted, size: 20),
-                      suffixIcon: _searchCtrl.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, color: C.muted, size: 18),
-                              onPressed: _clearSearch,
-                              tooltip: 'Clear',
-                            )
-                          : null,
+                  flex: 5,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildSearchField(),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Connect the barcode scanner to the Type-C port — it will type directly into the field above',
+                          style: TextStyle(fontSize: 11, color: C.muted),
+                        ),
+                        const SizedBox(height: 16),
+                        if (_globalMsg != null && _product == null) ...[
+                          StatusBar(msg: _globalMsg!, type: _globalType),
+                          const SizedBox(height: 16),
+                        ],
+                        if (_product != null) ...[
+                          _buildProductCard(),
+                          const SizedBox(height: 24),
+                        ],
+                      ],
                     ),
-                    onChanged: (_) { _activity(); _resetSelectAllTimer(); },
-                    onSubmitted: (_) => _search(),
-                    textInputAction: TextInputAction.search,
                   ),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _searching ? null : _search,
-                  child: _searching
-                      ? const _Spinner()
-                      : const Text('Search'),
+                const VerticalDivider(width: 1, thickness: 1, color: C.border),
+                Expanded(
+                  flex: 3,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _StockOperations(
+                          loading: _loadingStockOps,
+                          ops: _stockOps,
+                          qtys: _stockOpQtys,
+                          resolvingQtys: _resolvingQtys,
+                        ),
+                        const SizedBox(height: 16),
+                        _DraftOrders(loading: _loadingOrders, orders: _orders),
+                      ],
+                    ),
+                  ),
                 ),
               ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Connect the barcode scanner to the Type-C port — it will type directly into the field above',
-              style: TextStyle(fontSize: 11, color: C.muted),
-            ),
-            const SizedBox(height: 16),
+            );
+          }
 
-            if (_globalMsg != null && _product == null) ...[
-              StatusBar(msg: _globalMsg!, type: _globalType),
-              const SizedBox(height: 16),
-            ],
-
-            if (_product != null) ...[
-              _ProductCard(
-                product: _product!,
-                erp: _erp,
-                loadingErp: _loadingErp,
-                shagh: _shagh,
-                loadingShagh: _loadingShagh,
-                qtyCtrl: _qtyCtrl,
-                syncing: _syncing,
-                syncMsg: _syncMsg,
-                syncType: _syncType,
-                onSync: _sync,
-                onRefresh: _refresh,
-                onActivity: _activity,
-              ),
-              const SizedBox(height: 14),
-              _DraftOrders(loading: _loadingOrders, orders: _orders),
-              const SizedBox(height: 24),
-            ],
-          ],
-        ),
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSearchField(),
+                const SizedBox(height: 6),
+                const Text(
+                  'Connect the barcode scanner to the Type-C port — it will type directly into the field above',
+                  style: TextStyle(fontSize: 11, color: C.muted),
+                ),
+                const SizedBox(height: 16),
+                if (_globalMsg != null && _product == null) ...[
+                  StatusBar(msg: _globalMsg!, type: _globalType),
+                  const SizedBox(height: 16),
+                ],
+                if (_product != null) ...[
+                  _buildProductCard(),
+                  const SizedBox(height: 14),
+                  _StockOperations(
+                          loading: _loadingStockOps,
+                          ops: _stockOps,
+                          qtys: _stockOpQtys,
+                          resolvingQtys: _resolvingQtys,
+                        ),
+                  const SizedBox(height: 14),
+                  _DraftOrders(loading: _loadingOrders, orders: _orders),
+                  const SizedBox(height: 24),
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -403,6 +529,128 @@ class _ProductCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Stock Operations ─────────────────────────────────────────────────────────
+
+class _StockOperations extends StatelessWidget {
+  final bool loading;
+  final List<StockMoveLine>? ops;
+  final Map<String, double?> qtys;
+  final Set<String> resolvingQtys;
+  const _StockOperations({
+    required this.loading,
+    this.ops,
+    required this.qtys,
+    required this.resolvingQtys,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final count = ops?.length ?? 0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: C.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: C.border),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Text('STOCK OPERATIONS',
+                style: TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w700, color: C.muted, letterSpacing: 1)),
+            const Spacer(),
+            if (count > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: C.success.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('$count',
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700, color: C.success)),
+              ),
+          ]),
+          const SizedBox(height: 12),
+          if (loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: CircularProgressIndicator(strokeWidth: 2, color: C.muted),
+              ),
+            )
+          else if (ops == null || ops!.isEmpty)
+            const Text('No ready or draft stock operations for this product.',
+                style: TextStyle(fontSize: 13, color: C.muted, fontStyle: FontStyle.italic))
+          else
+            ...ops!.map((o) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: _StockOpRow(
+                    op: o,
+                    qty: qtys[o.id],
+                    isResolving: resolvingQtys.contains(o.id),
+                  ),
+                )),
+        ],
+      ),
+    );
+  }
+}
+
+class _StockOpRow extends StatelessWidget {
+  final StockMoveLine op;
+  final double? qty;
+  final bool isResolving;
+  const _StockOpRow({required this.op, this.qty, required this.isResolving});
+
+  Color get _stateColor => op.state == 'ready' ? C.success : C.warning;
+  String get _stateLabel => op.state == 'ready' ? 'Ready' : 'Draft';
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 14),
+        decoration: BoxDecoration(
+          color: C.surface2,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: C.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+                child: Text(op.operationName ?? '—',
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600, color: C.text))),
+            const SizedBox(width: 8),
+            if (isResolving)
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(strokeWidth: 1.5, color: C.muted),
+              )
+            else
+              Text(qty != null ? '${fmtQty(qty)} units' : '—',
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600, color: C.muted)),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _stateColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: _stateColor.withOpacity(0.4)),
+              ),
+              child: Text(_stateLabel,
+                  style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w700, color: _stateColor)),
+            ),
+          ],
+        ),
+      );
 }
 
 // ─── Draft Orders ─────────────────────────────────────────────────────────────
