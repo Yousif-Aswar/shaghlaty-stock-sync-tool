@@ -60,14 +60,33 @@ class Api {
   // ─── Quantities ────────────────────────────────────────────────────────────
 
   Future<ErpQty> getErpQty(String productId) async {
-    final res = await http.get(
-      Uri.parse('$_base/inventory/product-variant/$productId/'),
+    final res = await http.post(
+      Uri.parse(
+          '$_base/inventory/stock-quantity/filter-query?page=1&page_size=100&ordering=-created'),
       headers: _headers,
+      body: jsonEncode({
+        'domain': {
+          'and': [
+            ['product', 'exact', productId],
+            {'and': []},
+          ]
+        },
+        'return_archive': false,
+        'group_by': '',
+      }),
     );
     _check401(res);
     _checkOk(res, 'Failed to load ERP quantity');
     final body = jsonDecode(res.body) as Map<String, dynamic>;
-    return ErpQty.fromJson((body['data'] ?? body) as Map<String, dynamic>);
+    final rows = (body['data']?['results'] ?? body['data'] ?? body['results'] ?? []) as List;
+    final virtual = rows
+        .cast<Map<String, dynamic>>()
+        .where((r) => (r['location'] as Map<String, dynamic>?)?['name'] == 'VirtualLocation')
+        .toList();
+    double parseQty(dynamic v) => v == null ? 0 : double.tryParse(v.toString()) ?? 0;
+    final onHand = virtual.fold<double>(0, (s, r) => s + parseQty(r['qty_on_hand']));
+    final reserved = virtual.fold<double>(0, (s, r) => s + parseQty(r['qty_reserved']));
+    return ErpQty(onHand: onHand, reserved: reserved);
   }
 
   Future<ShaghlatyQty> getShaghlatyQty(String productId) async {
